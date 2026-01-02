@@ -5,51 +5,31 @@ import pickle
 import numpy as np
 import os
 
-# ---------------------------------
-# APP INIT
-# ---------------------------------
 app = FastAPI(
     title="Menopause ML API",
     version="1.0",
     description="Machine Learning API for Menopause Stage Prediction"
 )
 
-# ---------------------------------
-# CORS CONFIG
-# ---------------------------------
-# In production, replace * with your Vercel domain
-ALLOWED_ORIGINS = os.getenv(
-    "ALLOWED_ORIGINS",
-    "*"
-).split(",")
-
+# ---------------- CORS ----------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ---------------------------------
-# LOAD MODEL & TOOLS (SAFE)
-# ---------------------------------
+# ---------------- LOAD MODELS ----------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 try:
-    with open("models/rf_model.pkl", "rb") as f:
-        rf = pickle.load(f)
-
-    with open("models/scaler.pkl", "rb") as f:
-        scaler = pickle.load(f)
-
-    with open("models/label_encoder.pkl", "rb") as f:
-        le = pickle.load(f)
-
+    rf = pickle.load(open(os.path.join(BASE_DIR, "models/rf_model.pkl"), "rb"))
+    scaler = pickle.load(open(os.path.join(BASE_DIR, "models/scaler.pkl"), "rb"))
+    le = pickle.load(open(os.path.join(BASE_DIR, "models/label_encoder.pkl"), "rb"))
 except Exception as e:
     raise RuntimeError(f"Model loading failed: {e}")
 
-# ---------------------------------
-# REQUEST SCHEMA
-# ---------------------------------
+# ---------------- SCHEMAS ----------------
 class MenopauseInput(BaseModel):
     age: int
     estrogen: float
@@ -63,28 +43,19 @@ class MenopauseInput(BaseModel):
     vaginal_dryness: int
     joint_pain: int
 
-# ---------------------------------
-# RESPONSE SCHEMA (OPTIONAL BUT CLEAN)
-# ---------------------------------
 class MenopauseResponse(BaseModel):
     stage: str
     confidence: float
     probabilities: dict
 
-# ---------------------------------
-# HEALTH CHECK
-# ---------------------------------
 @app.get("/")
-def health_check():
+def health():
     return {"status": "Menopause ML API running"}
 
-# ---------------------------------
-# PREDICTION ENDPOINT
-# ---------------------------------
 @app.post("/predict-menopause", response_model=MenopauseResponse)
 def predict_menopause(data: MenopauseInput):
     try:
-        input_vector = np.array([[
+        X = np.array([[ 
             data.age,
             data.estrogen,
             data.fsh,
@@ -98,12 +69,12 @@ def predict_menopause(data: MenopauseInput):
             data.joint_pain
         ]])
 
-        X_scaled = scaler.transform(input_vector)
+        X_scaled = scaler.transform(X)
         probs = rf.predict_proba(X_scaled)[0]
 
-        stage_index = int(np.argmax(probs))
-        stage = le.inverse_transform([stage_index])[0]
-        confidence = round(float(probs[stage_index]) * 100, 2)
+        idx = int(np.argmax(probs))
+        stage = le.inverse_transform([idx])[0]
+        confidence = round(float(probs[idx]) * 100, 2)
 
         return {
             "stage": stage,
